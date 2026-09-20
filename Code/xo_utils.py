@@ -1,4 +1,61 @@
 # -*- coding: utf-8 -*-
+"""
+Support library for the Gaia DR4 pre-release epoch-astrometry fits driven by
+``xo_Astrometry.py``.
+
+Three groups of functions live here.
+
+Reading epoch astrometry
+    ``load_epoch_astrometry`` turns the raw DR4 pre-release VOTable into a
+    flat, one-row-per-CCD-observation DataFrame for a single source. It is
+    backed by two readers -- ``_rows_via_astropy`` and the dependency-free
+    ``_parse_binary2_votable`` -- and by ``_jd_to_jyear``.
+
+Initializing an orbit
+    ``scan_orbit_init`` runs a Thiele-Innes grid search over trial periods,
+    eccentricities and periastron times to produce starting values for the
+    Campbell elements, so the sampler does not have to find the orbit from
+    an uninformative prior. ``_kepler_E`` solves Kepler's equation for it.
+
+Helpers used downstream
+    ``FilterRVData`` reads a radial-velocity csv and applies its optional
+    ``Use`` column. ``BinByEpoch`` and ``GetModel`` are called by
+    ``xo_ResultPlots.py`` when drawing the fit results.
+
+Conventions
+-----------
+Angles are in radians unless the name ends in ``_deg``. Along-scan
+quantities (``w``, ``w_err``, ``a0``) are in mas. Time appears on three
+axes, and it matters which one a given array is on:
+
+    ``t_jyear``  absolute Julian year, TCB (e.g. 2017.83)
+    ``dt``       Julian years measured from J2017.5, the DR4 design-matrix
+                 reference epoch -- the axis the astrometric model works on
+    BJD          used only for radial velocities, converted by the caller
+
+The scan position angle is stored as ``Theta`` in radians, converted from
+the ``scan_pos_angle`` column in degrees. The along-scan unit vector is
+``(sin Theta, cos Theta)`` in (alpha*, delta).
+
+Gaia epoch times are on the TCB scale, which differs from TDB by ~24 s with
+a slowly growing offset. No TCB-to-TDB conversion is applied anywhere in
+this module.
+
+Columns returned by load_epoch_astrometry
+-----------------------------------------
+    ``t_jyear``           observation time, Julian year (TCB)
+    ``dt``                ``t_jyear`` - 2017.5, in Julian years
+    ``Theta``             scan position angle, radians
+    ``ParallaxFactorAl``  d(w)/d(parallax), dimensionless
+    ``ParallaxFactorAc``  the same for the across-scan direction; all NaN
+                          when the input table has no ``parallax_factor_ac``
+    ``RA0``, ``Dec0``     catalogue reference position of the source, degrees
+    ``w``                 along-scan centroid abscissa, mas
+    ``w_err``             its formal uncertainty, mas
+    ``used``              the ``used_by_agis_al`` flag
+    ``transit_id``        field-of-view transit the observation belongs to;
+                          used as the epoch label when binning
+"""
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -7,6 +64,17 @@ import base64
 import re
 import struct
 
+# ----------------------------------------------------------------------
+# DR4_REF_EPOCH_JYEAR : epoch the DR4 design matrix is referred to; the
+#                       'dt' column is measured from here.
+# JD_J2010            : default TIMESYS time origin of the pre-release
+#                       VOTable, used when the file declares none.
+# DAYS_PER_JYEAR      : days in a Julian year, exact by definition.
+# JD_J2000            : J2000.0 in JD, the zero point for _jd_to_jyear.
+# _SZ                 : VOTable datatype -> (width in bytes, struct
+#                       format) for the BINARY2 reader. 'boolean' has no
+#                       struct format because it is read a byte at a time.
+# ----------------------------------------------------------------------
 DR4_REF_EPOCH_JYEAR = 2017.5
 JD_J2010 = 2455197.5          # default TIMESYS timeorigin of the file (TCB)
 DAYS_PER_JYEAR = 365.25
@@ -16,8 +84,27 @@ _SZ = {"long": (8, ">q"), "double": (8, ">d"), "float": (4, ">f"),
        "short": (2, ">h"), "int": (4, ">i"), "boolean": (1, None),
        "unsignedByte": (1, ">B")}
 
-
 def FilterRVData(FilePath, delimiter=','):
+	"""
+	Read a radial-velocity csv and drop the rows flagged as unused.
+
+	Parameters
+	----------
+	FilePath : str
+		Path to a csv holding every instrument. xo_Astrometry.py expects
+		the columns bjd, rv [m/s], e_rv [m/s] and inst (instrument label,
+		lower case), one row per measurement.
+	delimiter : str, optional
+		Column separator passed through to pandas, default ','.
+
+	Returns
+	-------
+	pandas.DataFrame
+		The input table keeping only rows whose 'Use' entry is truthy.
+		If there is no 'Use' column every row is kept, so the column is
+		optional. The index is not reset, so it still refers to the
+		original file rows.
+	"""
 	df = pd.read_csv(FilePath, delimiter=delimiter)
 	if np.any(df.columns == 'Use'):
 		Flag = np.array(df['Use']).astype(bool)
@@ -26,31 +113,25 @@ def FilterRVData(FilePath, delimiter=','):
 
 	return df[Flag]
 
-"""
-Loader for the Gaia DR4 pre-release epoch astrometry RAW VOTable
-(GAIA_DR4_PRERELEASE_EPOCH_ASTROMETRY_RAW.xml).
-
-The file is ONE VOTable (BINARY2 serialisation) containing all 12 targets.
-Each row is one field-of-view transit of one source; several columns are
-variable-length arrays with one entry per CCD observation within the transit
-(obs_time_tcb [ns since the TIMESYS time origin, JD 2455197.5 TCB],
-scan_pos_angle [deg], centroid_pos_al [mas], centroid_pos_error_al [mas],
-used_by_agis_al [bool], ...), while others are per-transit scalars
-(source_id, transit_id, parallax_factor_al, ra0, dec0, ...).
-
-This module parses the table (astropy if available, otherwise a minimal
-pure-python BINARY2 reader), selects one source_id, explodes the per-CCD
-arrays into a flat table, applies the used_by_agis_al filter, and converts
-times to Julian years relative to the DR4 reference epoch J2017.5 --
-following the conventions of the ESA notebooks
-(esa/gaia-jupyter-notebooks: Gaia-DR4-prerelease_analyse_epoch_astrometry;
- esa/gaia-bhthree: Gaia_BH3_fit_astrometric_orbit).
-"""
-
 def _jd_to_jyear(jd):
+    """Julian date -> Julian year. Scale-agnostic: TCB in, TCB out."""
     return 2000.0 + (np.asarray(jd, dtype=float) - JD_J2000) / DAYS_PER_JYEAR
 
 def _rows_via_astropy(path):
+    """
+    Read the VOTable with astropy -> (None, list-of-dict rows, timeorigin).
+
+    Each row is a dict of column name -> value, with masked columns
+    filled with NaN so the caller never has to handle masks. The first
+    element is None because astropy does not hand back the FIELD
+    definitions that _parse_binary2_votable returns; both callers ignore
+    it.
+
+    The TIMESYS timeorigin is not exposed by every astropy version, so
+    JD_J2010 is returned unconditionally rather than read from the file.
+    A file declaring a different origin therefore needs the BINARY2
+    reader, reachable with use_astropy=False.
+    """
     from astropy.io.votable import parse_single_table
     table = parse_single_table(path).to_table()
     rows = []
@@ -61,9 +142,32 @@ def _rows_via_astropy(path):
     # TIMESYS timeorigin is not exposed by all astropy versions; use default.
     return None, rows, JD_J2010
 
-
 def _parse_binary2_votable(path):
-    """Minimal BINARY2 VOTable reader -> (fields, list-of-dict rows)."""
+    """
+    Minimal BINARY2 VOTable reader -> (fields, list-of-dict rows).
+
+    A dependency-free fallback for _rows_via_astropy. The FIELD
+    definitions are scraped from the XML header with regexes, the base64
+    <STREAM> payload is decoded, and the rows are unpacked according to
+    the BINARY2 layout: a per-row null mask of ceil(nfields/8) bytes,
+    then each field in declaration order, with variable-length fields
+    (arraysize="*") prefixed by a 4-byte count.
+
+    The mask bytes are skipped rather than decoded, so a field flagged
+    null is read as its raw placeholder value instead of as missing.
+    That is harmless for this file, where the columns the loader needs
+    are always populated, but it is worth knowing before pointing this
+    reader at a sparser table.
+
+    Returns
+    -------
+    fields : list of (name, datatype, arraysize)
+    rows : list of dict
+        One entry per field-of-view transit, keyed by column name.
+    timeorigin : float
+        The TIMESYS timeorigin declared in the file, or JD_J2010 when
+        the file declares none.
+    """
     txt = open(path).read()
     fields = []
     for m in re.finditer(r"<FIELD([^>]*)>", txt):
@@ -92,6 +196,8 @@ def _parse_binary2_votable(path):
                                          dtype="S1") == b"T"
                     pos += cnt
                 else:
+                    # The `if False` below is dead: the dtype is always
+                    # np.dtype(fmt). Left as written.
                     vals = np.frombuffer(buf[pos:pos + cnt * n],
                                          dtype=fmt.replace(">", ">") if False
                                          else np.dtype(fmt)).copy()
@@ -107,10 +213,65 @@ def _parse_binary2_votable(path):
         rows.append(row)
     return fields, rows, timeorigin
 
+
 def load_epoch_astrometry(xml_path, source_id, use_astropy=True,
                           only_used_by_agis=True):
-    """Return a flat per-CCD-observation DataFrame for one source."""
+    """
+    Return a flat per-CCD-observation DataFrame for one source.
+      
+    Loader for the Gaia DR4 pre-release epoch astrometry RAW VOTable
+    (GAIA_DR4_PRERELEASE_EPOCH_ASTROMETRY_RAW.xml).
 
+    The file is ONE VOTable (BINARY2 serialisation) containing all 12 targets.
+    Each row is one field-of-view transit of one source; several columns are
+    variable-length arrays with one entry per CCD observation within the transit
+    (obs_time_tcb [ns since the TIMESYS time origin, JD 2455197.5 TCB],
+    scan_pos_angle [deg], centroid_pos_al [mas], centroid_pos_error_al [mas],
+    used_by_agis_al [bool], ...), while others are per-transit scalars
+    (source_id, transit_id, parallax_factor_al, ra0, dec0, ...).
+
+    This module parses the table, selects one source_id, explodes the per-CCD
+    arrays into a flat table, applies the used_by_agis_al filter, and converts
+    times to Julian years relative to the DR4 reference epoch J2017.5 --
+    following the conventions of the ESA notebooks
+    (esa/gaia-jupyter-notebooks: Gaia-DR4-prerelease_analyse_epoch_astrometry;
+    esa/gaia-bhthree: Gaia_BH3_fit_astrometric_orbit).
+
+    Parameters
+    ----------
+    xml_path : str
+        Path to the epoch-astrometry VOTable.
+    source_id : int
+        Gaia source_id to extract. If it is not present, SystemExit is
+        raised listing the source_ids that are.
+    use_astropy : bool, optional
+        Try the astropy reader first (default). False forces the
+        pure-python BINARY2 reader. Note the fallback is unconditional:
+        any exception out of the astropy path, including a malformed
+        file, drops through to _parse_binary2_votable rather than
+        propagating, so a silent fallback is possible.
+    only_used_by_agis : bool, optional
+        Keep only observations flagged used_by_agis_al, i.e. the ones
+        that entered the astrometric solution. Default True.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per CCD observation, with the columns listed in the
+        module docstring, re-indexed 0..N-1. Rows with a non-finite w,
+        w_err, Theta or ParallaxFactorAl, or with w_err <= 0, are
+        dropped whatever only_used_by_agis is set to. Rows come back in
+        the order the transits appear in the file, so sort on 'dt' if
+        time order matters.
+
+    A one-line summary of how many observations survived, and the time
+    span they cover, is printed as a side effect.
+        
+    """
+
+    # use_astropy=False raises ImportError on purpose, so that forcing the
+    # BINARY2 reader reuses the same except-branch as a real failure of
+    # the astropy path.
     try:
         if not use_astropy:
             raise ImportError
@@ -131,6 +292,9 @@ def load_epoch_astrometry(xml_path, source_id, use_astropy=True,
         t_ns = np.asarray(r["obs_time_tcb"], dtype=float)
         nobs = len(t_ns)
 
+        # Some columns hold one value per CCD observation and some are
+        # per-transit scalars; broadcast the scalars so every column in
+        # the block has nobs entries.
         def per_ccd(name):
             v = np.asarray(r[name], dtype=float)
             return v if v.ndim and len(v) == nobs else np.full(nobs, float(v))
@@ -164,6 +328,8 @@ def load_epoch_astrometry(xml_path, source_id, use_astropy=True,
         )
         rec.append(pd.DataFrame(block))
 
+    # Quality mask. The finite-value and positive-error cuts always
+    # apply; the used_by_agis_al cut is the optional one.
     data = pd.concat(rec, ignore_index=True)
     n0 = len(data)
     good = np.isfinite(data[["w", "w_err", "Theta",
@@ -177,6 +343,7 @@ def load_epoch_astrometry(xml_path, source_id, use_astropy=True,
           % (int(source_id), len(data), n0,
              data["t_jyear"].min(), data["t_jyear"].max()))
     return data
+
 
 def _kepler_E(M: np.ndarray, e: float, max_iter: int = 100, tol: float = 1e-8) -> np.ndarray:
     """
@@ -197,6 +364,14 @@ def _kepler_E(M: np.ndarray, e: float, max_iter: int = 100, tol: float = 1e-8) -
     -------
     np.ndarray
         Eccentric anomaly (E) array in radians.
+
+    Notes
+    -----
+    No error is raised if the iteration has not converged within
+    max_iter; the last estimate is returned. Newton-Raphson on Kepler's
+    equation converges slowly for e close to 1 with M near zero, which
+    is one reason the eccentricity grids in scan_orbit_init stop at
+    0.95.
     """
     E = np.array(M, dtype=float)
     for _ in range(max_iter):
@@ -216,6 +391,56 @@ def scan_orbit_init(data, map_soln=None, P_min=None, P_max=None, oversample=10.0
     
     Extracts initial guesses for Campbell elements (P, e, T0, a0, i, omega, Omega)
     by running linear Thiele-Innes grid searches over candidate periods and eccentricities.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Epoch astrometry from load_epoch_astrometry. The columns dt,
+        Theta, w, w_err and ParallaxFactorAl are used.
+    map_soln : dict, optional
+        A single-star MAP solution (keys dRA, dDec, PMRA, PMDec,
+        Parallax). If given, that model is subtracted first and only the
+        four Thiele-Innes constants are solved for at each grid point.
+        If None -- the default, and what xo_Astrometry.py passes -- the
+        five astrometric and four orbital terms are solved jointly, nine
+        linear parameters in all.
+    P_min, P_max : float, optional
+        Period search limits in days. Default to 10 days and twice the
+        observing baseline.
+    oversample : float, optional
+        Frequency oversampling of the circular periodogram relative to
+        1/baseline. Default 10.
+    top_k : int, optional
+        How many periodogram minima are carried into the eccentric
+        refinement. Default 5.
+    MakePlot : bool, optional
+        Also build a chi2-versus-period figure. Default True.
+
+    Returns
+    -------
+    init : dict
+        P_days, e, T0, a0 [mas], cosi, omega, Omega [radians], phase and
+        red_chi2. These are the keys xo_Astrometry.py reads when seeding
+        the binary model.
+    fig : matplotlib.figure.Figure
+        Only meaningful when MakePlot is True. When it is False the
+        second return value is whatever the name `_` happens to hold at
+        that point -- the leftover counter from the refinement loop, not
+        a figure. Callers that pass MakePlot=False should discard it.
+
+    Notes
+    -----
+    The search runs in three stages: a linear circular periodogram over a
+    frequency-uniform grid; refinement of the top_k minima over a coarse
+    eccentricity grid; then up to eight zoom iterations around the best
+    candidate. At fixed (P, e, T0) the Thiele-Innes constants enter
+    linearly, so each grid point costs one small linear solve rather than
+    a nonlinear fit.
+
+    If the best orbit improves on the 5-parameter model by less than
+    delta-chi2 = 50 for its seven extra parameters, a note is printed:
+    that usually means there is no orbital signal in the astrometry and
+    the 'Single' analysis is the appropriate one.
     """
     # Exact column mapping matching Index(['index', 't_jyear', 'dt', 'Theta', ...])
     t = data['dt'].values
@@ -241,6 +466,8 @@ def scan_orbit_init(data, map_soln=None, P_min=None, P_max=None, oversample=10.0
         c5, *_ = np.linalg.lstsq(base * W[:, None], y * W, rcond=None)
         chi2_5p = np.sum(((y - base @ c5) * W) ** 2)
 
+    # Baseline and typical visit spacing, both in days, used to set the
+    # default period range and the frequency resolution below.
     baseline_d = (t.max() - t.min()) * 365.25
     tu = np.unique(np.round(np.sort(t) * 365.25))
     med_gap = np.median(np.diff(tu)) if len(tu) > 1 else np.nan
@@ -251,6 +478,11 @@ def scan_orbit_init(data, map_soln=None, P_min=None, P_max=None, oversample=10.0
     # =========================================================================
     # INTERNAL HELPER 1: LINEAR THIELE-INNES SOLVER
     # =========================================================================
+    # On the mutable default: `_cache` is rebound every time
+    # scan_orbit_init runs, because the `def` statement itself
+    # re-executes, so the cache is per-call and never shared between
+    # calls. It memoizes the parts of the normal equations that do not
+    # depend on (P, e, T0).
     def solve(X, Y, _cache={}):
         """
         Solves the weighted normal equations (O^T * W * O) * C = O^T * W * y
@@ -398,6 +630,7 @@ def scan_orbit_init(data, map_soln=None, P_min=None, P_max=None, oversample=10.0
         np.exp(np.linspace(np.log(P_min), np.log(P_max), 40)),
         np.array([0.0, 0.3, 0.6, 0.8, 0.9]), (np.inf, None), nT0=25))
 
+    # 12 = 9 linear coefficients + the three grid parameters (P, e, T0).
     dof = float(len(data) - 12)
     cands.sort(key=lambda b: b[0])
     print("Refined period candidates (red.chi2 @ P, e):")
@@ -433,11 +666,19 @@ def scan_orbit_init(data, map_soln=None, P_min=None, P_max=None, oversample=10.0
     # -------------------------------------------------------------------------
     # STEP 3: Convert Thiele-Innes constants to Campbell geometric elements
     # -------------------------------------------------------------------------
+    # Where the Thiele-Innes constants sit in `coef` depends on which
+    # branch of solve() ran: the four constants alone when the 5p model
+    # was pre-subtracted, or five baseline terms followed by the four
+    # constants in the joint case.
     if map_soln is not None:
         A_, B_, F_, G_ = coef[0], coef[1], coef[2], coef[3]
     else:
         A_, B_, F_, G_ = coef[5], coef[6], coef[7], coef[8]
 
+    # Standard Thiele-Innes -> Campbell inversion. a0 comes out in mas
+    # because the constants were fit against w in mas; the two arctan2
+    # combinations give omega +/- Omega, which separate into the two
+    # angles.
     u = 0.5 * (A_**2 + B_**2 + F_**2 + G_**2)
     v = A_ * G_ - B_ * F_
     a0 = np.sqrt(u + np.sqrt(max(u * u - v * v, 0.0)))
@@ -466,8 +707,32 @@ def scan_orbit_init(data, map_soln=None, P_min=None, P_max=None, oversample=10.0
     else:
         return init, _
 
+
 def BinByEpoch(t, y, yerr, EpochID):
-    """Inverse-variance weighted average of y within each unique EpochID."""
+    """
+    Inverse-variance weighted average of y within each unique EpochID.
+
+    Gaia records several CCD observations per field-of-view transit, so
+    the natural epoch label is transit_id. The scan angle is fixed within
+    a transit, which is why averaging the along-scan value and then
+    projecting onto the sky gives the same answer as projecting first and
+    then averaging.
+
+    Parameters
+    ----------
+    t, y, yerr : array_like
+        Times, values and 1-sigma uncertainties, one entry per
+        observation.
+    EpochID : array_like
+        Epoch label per observation; rows sharing a label are averaged.
+
+    Returns
+    -------
+    tBin, yBin, eBin : ndarray
+        One entry per unique epoch, sorted by time. tBin is the
+        unweighted mean time of the epoch, yBin the inverse-variance
+        weighted mean value, and eBin is 1/sqrt(sum(1/yerr**2)).
+    """
     t = np.asarray(t, dtype=float)
     y = np.asarray(y, dtype=float)
     yerr = np.asarray(yerr, dtype=float)
@@ -488,7 +753,28 @@ def BinByEpoch(t, y, yerr, EpochID):
  
  
 def GetModel(Key, soln=None, trace=None):
-    """Median of trace[Key], or soln[Key]. Returns (median, lo, hi); lo/hi None for MAP."""
+    """
+    Median of trace[Key], or soln[Key]. Returns (median, lo, hi); lo/hi None for MAP.
+
+    Lets the plotting routines accept either a MAP solution or an MCMC
+    trace without branching on which one they were handed.
+
+    Parameters
+    ----------
+    Key : str
+        Name of a free or deterministic variable in the model.
+    soln : dict, optional
+        MAP solution. If given it wins, and the value is returned as-is
+        with no interval.
+    trace : pymc3.MultiTrace, optional
+        Posterior samples. The 16th, 50th and 84th percentiles are taken
+        over the sample axis.
+
+    Returns
+    -------
+    (median, lo, hi)
+        lo and hi are None when soln was used.
+    """
     if soln is not None:
         return np.asarray(soln[Key]), None, None
     Lo, Med, Hi = np.percentile(trace[Key], axis=0, q=[16, 50, 84])
