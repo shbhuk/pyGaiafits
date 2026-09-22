@@ -1,18 +1,17 @@
 # pyGaiafits
 
-Working directory for exoplanet fitting and modelling.
 
 
 # Setup
 
 ## Environment
 
-Follow the steps below (preferably in your `work` directory on aci. First create a [virtual environment](https://uoa-eresearch.github.io/eresearch-cookbook/recipe/2014/11/20/conda/), and then activate it.
+Follow the steps below to create a [virtual environment](https://uoa-eresearch.github.io/eresearch-cookbook/recipe/2014/11/20/conda/), and then activate it.
 
 ```
 module load anaconda3
-conda create -p=/storage/work/[INSERT YOUR USERNAME HERE]/work/[INSERT VENV NAME HERE] python=3.8
-conda activate /storage/work/[INSERT YOUR USERNAME HERE]/work/[INSERT VENV NAME HERE]
+conda create -p=~/work/[INSERT VENV NAME HERE] python=3.9
+conda activate ~/work/[INSERT VENV NAME HERE]
 which python # This should point to the path above
 ```
 Install the packages with versions as shown below - 
@@ -43,18 +42,18 @@ You need to have a `DataParentDirectory` with a separate directory for each star
 `Code\Config.py`. The scripts will refer to this path for the photometry dataset, RV dataset, and the config file corresponding to each star.
 
 ```
-pyexofits
+pyGaiafits
 |   Code
 
 
 DataParentDirectory # Point to this path in Code/Config.py
 |   Star1Name   RV_timeseries.csv
-|   |   Photometry
-|   |   |   Photometry_timeseries1.csv
-|   |   |   Photometry_timeseries2.csv
-|   |   Star1Name_config.txt
 |   |   RV_timeseries.csv
 |   Star2Name
 ....
 
 ```
+
+# Citation
+
+Publicly released alongside the manuscript "A Joint Astrometric and Radial Velocity Study of Gaia-4b" by Kanodia et al. 2026

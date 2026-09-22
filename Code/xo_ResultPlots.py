@@ -1,3 +1,50 @@
+"""
+Figures for the Gaia DR4 epoch-astrometry fits driven by ``xo_Astrometry.py``.
+
+Every function here takes a fit result -- either a MAP solution dict or a
+PyMC3 trace -- together with the data it was fit to, and returns a
+matplotlib Figure. Nothing is written to disk unless ``SavePlot=True`` is
+passed; ``xo_Astrometry.py`` instead collects the returned figures into a
+single multi-page PDF.
+
+    ``PlotAstroAL``    along-scan abscissa, or the isolated orbit signal,
+                       against time with residuals underneath
+    ``PlotAstroSky``   reconstructed motion on the sky, the astrometric
+                       orbit, and the residuals of both models
+    ``PlotRVCurve``    three-panel radial-velocity figure, used only by the
+                       ``Binary+RV`` analysis
+    ``ResidualPlots``  the generic data-over-model / residual pair that
+                       ``PlotAstroAL`` is built on
+    ``BinSkyByEpoch``  epoch-averaging helper for the sky panels
+
+MAP and MCMC
+------------
+Each function accepts ``soln`` or ``trace`` and works out which it was
+given; ``soln`` wins if both are passed. Model values are pulled through
+``GetModel`` from ``xo_utils``, which returns a median plus a 16th/84th
+percentile band for a trace, and a bare value with no band for a MAP
+solution. That is why shaded uncertainty bands appear only on the MCMC
+versions of these figures.
+
+Epoch binning
+-------------
+Gaia records several CCD observations per field-of-view transit. Plotted
+raw, they show up as short streaks: within a transit the scan angle is
+fixed and only the along-scan coordinate is measured, so all of a transit's
+visits fall on one line. The astrometry figures therefore overplot the
+inverse-variance weighted mean of each transit, keyed on the ``transit_id``
+column, through ``BinByEpoch``.
+
+Backend
+-------
+``matplotlib.use("Agg")`` is set at import, before any figure is created.
+That makes the module safe to run headless on a cluster, but it also means
+the ``MakePlots=True`` arguments below cannot display anything --
+``plt.show`` is a no-op under Agg. Work with the returned Figure instead.
+
+Figures are never closed here, so a long loop over many sources will
+accumulate them; call ``plt.close(fig)`` once a figure has been saved.
+"""
 import sys
 import os
 from xo_utils import BinByEpoch, GetModel
@@ -7,15 +54,21 @@ import matplotlib
 matplotlib.use("Agg")
 
 
+# Per-planet labels and colours, used only by PlotRVCurve's multi-planet
+# branch. DarkerInstColours is indexed by RV instrument number, so it
+# caps the number of instruments that can be drawn at seven.
 PlanetNames = ['b', 'c', 'd', 'e', 'f']
 PlanetColours = ["C0", "C1", "C2", "C3", "C4", "C5", "Magenta"]
 DarkerInstColours = ["darkgreen", "darkslateblue", "darkred",
                      "darkviolet", "darksalmon", "orange", "palevioletred"]
 
+# Kept for consistency with how these modules are launched elsewhere.
+# Note it has no effect on this module's own imports: the
+# `from xo_utils import ...` line above is resolved before this runs.
 try:
     pwd = os.path.dirname(os.path.abspath(__file__))
 except:
-    pwd = r'/home/skanodia/work/pyGaiafits/Code'
+    pwd = r'/home/skanodia/resgroupdir/pyGaiafits/Code'
 
 
 print(pwd)
@@ -25,10 +78,52 @@ sys.path.append(pwd)
 def PlotRVCurve(RVDict, RV_GP=False,
                 soln=None, trace=None, MakePlots=False, Title=None, NPlanets=1):
     """
+    Three-panel radial-velocity figure for the Binary+RV analysis.
+
     soln : Output of Model MAP optimization.
     trace: Output of MCMC chains.
     Define one of those two.
 
+    Panels, top to bottom:
+      1. RVs with the per-instrument offsets removed, coloured by
+         instrument, over the GP prediction.
+      2. The same RVs detrended, over the Keplerian model. For an MCMC
+         result the combined model is a median with a 16th-84th
+         percentile band; for a MAP result it is a single curve.
+      3. Residuals divided by the formal uncertainty, drawn twice per
+         instrument: once with error bars widened by the fitted jitter,
+         once with the formal errors alone.
+
+    Parameters
+    ----------
+    RVDict : dict
+        The RV bundle assembled by xo_Astrometry.py. The keys read here
+        are X_RVs (BJD), Y_RVs and Yerr_RVs (m/s), t_rv (the fine
+        prediction grid), RVInstruments (labels, in the order their
+        offsets were fit) and InstID (index into that list, one entry
+        per measurement). The per-instrument x_rv_*/y_rv_*/yerr_rv_*
+        entries of RVDict are not used.
+    RV_GP : bool, optional
+        Whether the fit included a GP on the RVs. When False, zeros
+        stand in for it -- so panel 1's line labelled 'GP' is a flat
+        zero rather than a fitted component. It is drawn either way.
+    soln, trace : dict or pymc3.MultiTrace, optional
+        Give exactly one. Either must supply RVMean, RVDiag, rv_model,
+        rv_model_pred and vrad_pred, plus rv_gp and rv_gp_pred when
+        RV_GP is True. RVDiag is a variance (formal error squared plus
+        jitter squared), which is why panel 3 takes its square root.
+    MakePlots : bool, optional
+        Calls plt.show, which does nothing under the Agg backend forced
+        at import. See the module docstring.
+    Title : str, optional
+        Title for the top panel; defaults to 'MAP run' or 'MCMC run'.
+    NPlanets : int, optional
+        Number of Keplerians in the model. Above 1, vrad_pred is indexed
+        per planet in panel 2. The astrometry pipeline always passes 1.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
     """
 
     X_RVs = RVDict['X_RVs']
@@ -38,6 +133,10 @@ def PlotRVCurve(RVDict, RV_GP=False,
     RVInstruments = RVDict['RVInstruments']
     InstID = RVDict['InstID']
 
+    # MAP and MCMC differ only in how the model values are extracted: a
+    # MAP solution is read straight out of the dict, while a trace is
+    # reduced to a posterior median (and, for the combined model, a
+    # 16/50/84 percentile triple used to shade the band in panel 2).
     if soln is not None:
         Offset = soln['RVMean']
         RVDiag = soln['RVDiag']
@@ -76,6 +175,8 @@ def PlotRVCurve(RVDict, RV_GP=False,
     DetrendedRVs = OffsetSubtractedRVs - GP
     Residuals = OffsetSubtractedRVs - rv_model
 
+    # Panels share an x axis; the right margin is pulled in to leave room
+    # for the legends, which are anchored outside the axes.
     fig, axes = plt.subplots(3, 1, figsize=(10, 5), sharex=True)
     fig.subplots_adjust(right=0.75)
 
@@ -140,6 +241,10 @@ def PlotRVCurve(RVDict, RV_GP=False,
     ax.set_xlim(t_rv.min(), t_rv.max())
     ax.set_xlabel("BJD_TDB")
 
+    # The triple-quoted block below is a disabled title template, not a
+    # docstring: it is a bare string expression that Python evaluates and
+    # discards. It refers to keys (m_pl, m_star, rv0, jitter_RV) that the
+    # astrometric model does not define, so it cannot be re-enabled as-is.
     if Title is None:
         if ResultType == 'MAP':
             """
@@ -171,14 +276,35 @@ def ResidualPlots(xdata, ydata,
                   Title='', Xlabel='', Ylabel='', Ymodellabel='',
                   ResidScale=1e6, ResidUnits='ppm'):
     """
-    Make residual plot.
-    ydata can be a list of 1D arrays, in which case will plot each one separately.
-    In such case, give names for each dataset in Ydatalabels
-    ymodel_sigma : Default is None. If specified then will shade the 1 sigma uncertainties of the model
- 
-    ResidScale / ResidUnits : scaling and label for the residual sigma. The
-    1e6 / 'ppm' default is right for relative flux; pass 1.0 / 'mas' for
-    astrometry.
+    Generic two-panel figure: data with a model over it, residuals below.
+
+    Parameters
+    ----------
+    xdata, ydata : array_like
+        The observations, drawn as a scatter in the upper panel.
+    xmodel, ymodel : array_like
+        The model curve. Note these serve two purposes that pull in
+        different directions: ymodel is drawn against xmodel, but the
+        residuals are formed element-wise as ydata - ymodel. So ymodel
+        must be aligned with ydata index-for-index, which means passing
+        a sorted model against sorted xmodel is only correct when xdata
+        was already sorted. See the note in PlotAstroAL.
+    ymodel_sigma : sequence of two arrays, optional
+        Lower and upper bounds shaded around the model curve. Ignored
+        when None, which is what a MAP solution yields.
+    Title, Xlabel, Ylabel, Ymodellabel : str, optional
+        Text for the title, the shared x axis, the upper y axis, and the
+        model's legend entry.
+    ResidScale, ResidUnits : float and str, optional
+        Scale factor and label for the residual scatter quoted in the
+        lower panel's legend. The 1e6 / 'ppm' defaults suit relative
+        flux; the astrometry callers pass 1.0 / 'mas'.
+
+    Returns
+    -------
+    fig, axes
+        The Figure and its two Axes, so a caller can draw more onto
+        them -- which is how PlotAstroAL adds its epoch means.
     """
     fig, axes = plt.subplots(2, 1, sharex=True)
     axes[0].scatter(xdata, ydata, c='k', label='Data', s=3, alpha=0.3)
@@ -210,12 +336,50 @@ def PlotAstroAL(data, soln=None, trace=None, outdir=None, label='',
     Define one of those two.
  
     Built on ResidualPlots, with the inverse-variance weighted mean of each
-    epoch overplotted on both panels -- the same pattern as the 300 s bins in
-    PlotPhaseFoldedLightCurve.
+    epoch overplotted on both panels.
  
     ModelKey : 'w_SSModel' or 'w_BSModel'.
     OrbitKey : 'w_orb'. If given, the top panel shows the orbit signal with
                the 5p model removed rather than the raw AL abscissa.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Epoch astrometry from load_epoch_astrometry. The columns t_jyear,
+        w, w_err and (for binning) transit_id are read.
+    soln, trace : dict or pymc3.MultiTrace, optional
+        Give exactly one. Must contain ModelKey, and OrbitKey too when
+        that is requested.
+    outdir : str, optional
+        Directory for the png, used only when SavePlot is True.
+    label : str, optional
+        Free-text tag put in the title and the output filename, e.g.
+        'Single Star MAP'.
+    EpochKey : str, optional
+        Column grouping observations into epochs, default 'transit_id'.
+        Binning is skipped silently if the column is absent or this is
+        None.
+    SavePlot : bool, optional
+        Also write AstroAL_<label>_<MAP|MCMC>.png into outdir.
+    MakePlots : bool, optional
+        No-op under the Agg backend; see the module docstring.
+    Title : str, optional
+        Overrides the '<label> <MAP|MCMC>' default.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Notes
+    -----
+    The residual panel assumes `data` arrives sorted in time. The model
+    handed to ResidualPlots is sorted by `Order`, while the observations
+    are not, and ResidualPlots forms residuals element-wise -- so the two
+    only line up when `Order` is the identity. xo_Astrometry.py sorts the
+    table on 'dt' before fitting, which makes that true there. Passing an
+    unsorted table would leave the top panel correct but silently scramble
+    the residual panel and its quoted scatter. The epoch-binned residuals
+    added further down are computed separately and are unaffected.
     """
     ResultType = 'MAP' if soln is not None else 'MCMC'
     w_med, w_lo, w_hi = GetModel(ModelKey, soln, trace)
@@ -249,6 +413,10 @@ def PlotAstroAL(data, soln=None, trace=None, outdir=None, label='',
                               Ylabel=Ylabel, Ymodellabel=Ymodellabel,
                               ResidScale=1.0, ResidUnits='mas')
  
+    # Epoch weighted means over the top, on both panels. The upper panel
+    # bins whatever is being displayed there (the abscissa, or the
+    # isolated orbit signal); the lower panel always bins the full
+    # residual wObs - w_med, regardless of OrbitKey.
     # epoch weighted means over the top, on both panels
     DoBin = EpochKey is not None and EpochKey in getattr(data, 'columns', [])
     if DoBin:
@@ -289,6 +457,25 @@ def BinSkyByEpoch(t, RA, Dec, wErr, EpochID):
     sin/cos(Theta) are constant across the epoch, inverse-variance averaging
     the coordinate is identical to averaging the AL residual and then
     projecting it, so BinByEpoch can be applied to each coordinate directly.
+
+    Parameters
+    ----------
+    t : array_like
+        Observation times, passed through to BinByEpoch for grouping.
+    RA, Dec : array_like
+        Reconstructed offsets in mas, one entry per observation.
+    wErr : array_like
+        Along-scan uncertainties, used as the weights for both
+        coordinates.
+    EpochID : array_like
+        Epoch label per observation, normally transit_id.
+
+    Returns
+    -------
+    RAb, Decb : ndarray
+        One entry per epoch, ordered by time. The binned times
+        themselves are discarded, since the sky panels plot Dec against
+        RA rather than either against time.
     """
     _, RAb, _ = BinByEpoch(t, RA, wErr, EpochID)
     _, Decb, _ = BinByEpoch(t, Dec, wErr, EpochID)
@@ -305,6 +492,36 @@ def PlotAstroSky(data, soln=None, trace=None, outdir=None, label='',
     ResidualPlots is not used here -- it builds its own two-panel figure, so
     it cannot draw into this grid. These residual panels are plain black
     points with the epoch weighted means over the top.
+
+    The layout is chosen from the result itself: if 'w_BSModel' is among
+    the model's variables the figure is 2x2, otherwise 1x2.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Epoch astrometry from load_epoch_astrometry; t_jyear, w, w_err
+        and transit_id are read.
+    soln, trace : dict or pymc3.MultiTrace, optional
+        Give exactly one. Both cases need RA_model_SS, Dec_model_SS and
+        w_SSModel. A single-star result additionally needs RA_data_SS
+        and Dec_data_SS; a binary result needs RA_model_BS,
+        Dec_model_BS, RA_data_BS, Dec_data_BS, RA_orbit_grid,
+        Dec_orbit_grid and w_BSModel.
+    outdir, label, SavePlot, MakePlots, Title
+        As for PlotAstroAL; the png is named AstroSky_<label>_<type>.png.
+    EpochKey : str, optional
+        Column grouping observations into epochs, default 'transit_id'.
+        When binning is off, the unbinned points are drawn at a higher
+        alpha to stay legible on their own.
+    NDraws : int, optional
+        Number of posterior orbits drawn faintly behind the median one,
+        in the orbit panel. Applies to a trace only. The draws are chosen
+        with np.random.choice and are not seeded, so the faint curves
+        differ between runs on the same trace.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
     """
     ResultType = 'MAP' if soln is not None else 'MCMC'
     Keys = soln.keys() if soln is not None else trace.varnames
@@ -319,6 +536,11 @@ def PlotAstroSky(data, soln=None, trace=None, outdir=None, label='',
     wErr = np.asarray(data.w_err, dtype=float)
     Order = np.argsort(t)
  
+    # Residual panel shared by the single-star and binary rows. The chi2
+    # in the legend is divided by the number of finite points, not by a
+    # degrees-of-freedom count, and treats every CCD observation as
+    # independent -- so read it as a scatter diagnostic, not a goodness
+    # of fit.
     def ResidPanel(Ax, Resid, PanelTitle):
         Chi2 = np.nansum((Resid / wErr) ** 2)
         NData = int(np.sum(np.isfinite(Resid)))
@@ -336,6 +558,9 @@ def PlotAstroSky(data, soln=None, trace=None, outdir=None, label='',
         Ax.set_title(PanelTitle)
         Ax.legend(loc='best', fontsize=8)
  
+    # Only the medians are needed here: the sky panels draw curves and
+    # points rather than shaded bands, so the percentile edges that
+    # GetModel returns for a trace are discarded.
     RA_SS, _, _ = GetModel('RA_model_SS', soln, trace)
     Dec_SS, _, _ = GetModel('Dec_model_SS', soln, trace)
     w_SS, _, _ = GetModel('w_SSModel', soln, trace)
@@ -387,6 +612,9 @@ def PlotAstroSky(data, soln=None, trace=None, outdir=None, label='',
             for i in Idx:
                 Ax.plot(trace['RA_orbit_grid'][i, :-2], trace['Dec_orbit_grid'][i, :-2],
                         '-b', lw=0.6, alpha=0.12, zorder=-5)
+        # The orbit grid spans a full 2*pi inclusive of both endpoints, so
+        # its last points retrace the first; dropping the final two keeps
+        # the curve from doubling back over itself.
         Ax.plot(RAg[:-2], Decg[:-2], '-b', lw=1.6, label="{} orbit".format(ResultType))
         Ax.plot(0, 0, '+k', ms=9)
         Ax.set_xlabel(r"$\Delta\alpha\cos(\delta)$ [mas]")
