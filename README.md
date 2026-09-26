@@ -52,7 +52,7 @@ Then you will follow the instructions below and clone this GitHub repository. Se
 
 ## Directory Structure
 You need to have a `DataParentDirectory` with a separate directory for each star (e.g. `Gaia4`, etc.), and then point to this path in 
-`Code\Config.py`. The scripts will refer to this path for the astrometry dataset for DR4 pre-release, but can be changed later for DR4. 
+`Code\Config.py`. The scripts will refer to `DataParentDirectory` for the astrometry dataset for DR4 pre-release, but can be changed later for DR4. 
 I suggest using this same directory for the RV data files too, but technically the RV file can be stored anywhere.
 
 ```
@@ -61,7 +61,8 @@ pyGaiafits
 
 
 DataParentDirectory # Point to this path in Code/Config.py
-|   Star1Name   RV_timeseries.csv
+    GAIADR4PreReleaseXML.XML
+|   Star1Name   
 |   |   RV_timeseries.csv
 |   Star2Name
 ....
@@ -81,7 +82,7 @@ python Code/xo_Astrometry.py --StarName Gaia4 --SOURCE_ID 1457486023639239296 --
 
 # the above, fit jointly with radial velocities
 python Code/xo_Astrometry.py --StarName Gaia4 --SOURCE_ID 1457486023639239296 \
-    --Analysis "Binary+RV" --rv-csv Data/Gaia4/Gaia4b_GummiHARPSN_HPF2026.csv
+    --Analysis "Binary+RV" --rv-csv "../Data/Gaia4/Gaia4b_GummiHARPSN_HPF2026.csv"
 ```
 
 | Argument | Required | Description |
@@ -114,14 +115,15 @@ read from it:
 
 ```
 DataParentDirectory/
-├── GAIA_DR4_PRERELEASE_EPOCH_ASTROMETRY_RAW.xml   # epoch astrometry, all sources in one file
+├── GAIA_DR4_PRERELEASE_EPOCH_ASTROMETRY_RAW.xml   # epoch astrometry, all sources in one file. 
 └── <StarName>/                                    # must exist; outputs are written here
 ```
 
 The epoch-astrometry file is a single VOTable (BINARY2) holding every source;
 one row per field-of-view transit, with per-CCD quantities stored as
 variable-length arrays. It is read with `astropy` when available and with a
-dependency-free BINARY2 reader otherwise. For Gaia DR4 the data file and reader function should be updated.
+dependency-free BINARY2 reader otherwise. 
+For Gaia DR4 (post December 2026) the data file and reader function should be updated.
 
 `<StarName>/` is **not** created automatically — only the run subdirectory
 inside it is, so create the per-star directory before the first run for a new

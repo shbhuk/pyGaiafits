@@ -123,8 +123,7 @@ Written to ``<DataParentDirectory>/<StarName>/<RunName>/``,
 Dependencies
 ------------
 Third-party: numpy, matplotlib, pymc3, pymc3_ext, exoplanet, theano, corner,
-and arviz (used by ``pm.summary`` / ``pm.traceplot``). pandas is imported but
-not used directly.
+and arviz (used by ``pm.summary`` / ``pm.traceplot``). 
 
 Local modules shipped alongside this file: ``xo_utils`` (data loading, the
 orbit-grid initializer, RV reading), ``xo_ResultPlots`` (all figures), and
@@ -140,7 +139,7 @@ https://www.cosmos.esa.int/web/gaia/public-dpac-documents
 
 # python xo_Astrometry.py --StarName "Gaia4" --SOURCE_ID 1457486023639239296 
 #     --Analysis "Binary+RV" 
-#     --rv-csv "/resnick/groups/carnegie_poc/skanodia/RunExoplanetRVs/Data/GaiaTesting/data/Gaia4b_GummiHARPSN_HPF2026.csv"
+#     --rv-csv "../Data/Gaia4/Gaia4b_GummiHARPSN_HPF2026.csv"
 
 
 import matplotlib.pyplot as plt
