@@ -1,5 +1,7 @@
 # pyGaiafits
 
+Publicly released alongside the manuscript "A Joint Astrometric and Radial Velocity Study of Gaia-4b" by Kanodia et al. (in prep.)
+
 # Overview
 
 `xo_Astrometry.py` fits Gaia DR4 pre-release epoch astrometry — the per-CCD
@@ -119,7 +121,7 @@ DataParentDirectory/
 The epoch-astrometry file is a single VOTable (BINARY2) holding every source;
 one row per field-of-view transit, with per-CCD quantities stored as
 variable-length arrays. It is read with `astropy` when available and with a
-dependency-free BINARY2 reader otherwise.
+dependency-free BINARY2 reader otherwise. For Gaia DR4 the data file and reader function should be updated.
 
 `<StarName>/` is **not** created automatically — only the run subdirectory
 inside it is, so create the per-star directory before the first run for a new
@@ -148,8 +150,7 @@ Point `DataParentDirectory` at it to reproduce the published fit.
 
 # Outputs
 
-Written to `<DataParentDirectory>/<StarName>/<RunName>/`, where `RunName` is
-`<SingleFit|BinaryFit|BinaryRVFit>_AllRVs_QuadTrend_UseEverything_<StarName>`:
+Written to `<DataParentDirectory>/<StarName>/<RunName>/`:
 
 | File | Contents |
 | --- | --- |
@@ -178,4 +179,4 @@ Sampling uses `tune=3000`, `draws=1500` per chain and dominates the runtime.
 
 # Citation
 
-Publicly released alongside the manuscript "A Joint Astrometric and Radial Velocity Study of Gaia-4b" by Kanodia et al. 2026
+Cite "A Joint Astrometric and Radial Velocity Study of Gaia-4b" by Kanodia et al. (in prep.)
