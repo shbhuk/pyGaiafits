@@ -147,7 +147,6 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import os, sys
 import numpy as np
-import pandas as pd
 
 import exoplanet as xo
 import pymc3 as pm
