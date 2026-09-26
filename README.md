@@ -39,7 +39,7 @@ Then you will follow the instructions below and clone this GitHub repository. Se
 
 ## Directory Structure
 You need to have a `DataParentDirectory` with a separate directory for each star (e.g. `TOI-1728`, `TOI-3629`, etc.), and then point to this path in 
-`Code\Config.py`. The scripts will refer to this path for the photometry dataset, RV dataset, and the config file corresponding to each star.
+`Code\Config.py`. The scripts will refer to this path for the astrometry dataset, RV dataset, and the config file corresponding to each star.
 
 ```
 pyGaiafits

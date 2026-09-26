@@ -106,7 +106,7 @@ Inputs
 
 Outputs
 -------
-Written to ``<DataParentDirectory>/<StarName>/Photometry/<RunName>/``, 
+Written to ``<DataParentDirectory>/<StarName>/<RunName>/``, 
 
     ``Plots_<RunName>.pdf``        orbit-grid initialization, MAP and MCMC
                                    along-scan and sky plots, the posterior
@@ -311,11 +311,11 @@ print("RunName = ", RunName)
 
 # Create a new ResultDirectory in DataDirectory based on the RunName.
 # os.mkdir creates only the final level, so
-# <DataParentDirectory>/<StarName>/Photometry/ must already exist or this
+# <DataParentDirectory>/<StarName>/ must already exist or this
 # raises FileNotFoundError. An existing directory is reused, and files
 # from an earlier run with the same RunName are overwritten.
 DataDirectory = os.path.join(DataParentDirectory, StarName)
-ResultDirectory = os.path.join(DataDirectory, 'Photometry', RunName)
+ResultDirectory = os.path.join(DataDirectory, RunName)
 
 if os.path.exists(ResultDirectory):
 	print(ResultDirectory + " already exists")
