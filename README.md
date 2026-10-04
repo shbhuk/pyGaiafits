@@ -181,4 +181,27 @@ Sampling uses `tune=3000`, `draws=1500` per chain and dominates the runtime.
 
 # Citation
 
-Cite "A Joint Astrometric and Radial Velocity Study of Gaia-4b" by Kanodia et al. (in prep.)
+If you use `pyGaiafits` in your work, please cite "A Joint Astrometric and Radial Velocity Study
+of Gaia-4b" by Kanodia et al. (in prep.), along with the software it is built on:
+
+**Orbit modelling and inference**
+
+- [`exoplanet` v0.4.4](https://doi.org/10.5281/zenodo.4469745) and the
+  [`exoplanet` JOSS article](https://doi.org/10.21105/joss.03285)
+- [PyMC3](https://peerj.com/articles/cs-55/)
+- [`pymc3-ext`](https://github.com/exoplanet-dev/pymc-ext) — pinned here at
+  v0.0.2; the repository has since been renamed `pymc-ext` and now targets PyMC ≥ 4
+- [Theano](https://arxiv.org/abs/1605.02688)
+- [ArviZ](https://doi.org/10.21105/joss.01143)
+
+**Plotting and scientific Python**
+
+- [corner.py](https://doi.org/10.21105/joss.00024)
+- [NumPy](https://doi.org/10.1038/s41586-020-2649-2)
+- [Matplotlib](https://doi.org/10.1109/MCSE.2007.55)
+- [pandas v1.1.4](https://doi.org/10.5281/zenodo.4161697)
+- Astropy: [2013](https://doi.org/10.1051/0004-6361/201322068),
+  [2018](https://doi.org/10.3847/1538-3881/aabc4f) and
+  [2022](https://doi.org/10.3847/1538-4357/ac7c74) — optional at runtime, used
+  only by the astropy VOTable reader in `xo_utils.py`, which falls back to a
+  dependency-free BINARY2 parser
