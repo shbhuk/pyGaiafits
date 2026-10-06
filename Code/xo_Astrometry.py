@@ -81,12 +81,15 @@ Angle degeneracy
 Command-line usage
 ------------------
     python xo_Astrometry.py --SOURCE_ID 1457486023639239296 \\
+                            --RunName SingleStarFit \\
                             --StarName Gaia4 --Analysis Single
 
     python xo_Astrometry.py --SOURCE_ID 1457486023639239296 \\
+                            --RunName BinaryStarFit    \\
                             --StarName Gaia4 --Analysis Binary
 
     python xo_Astrometry.py --SOURCE_ID 1457486023639239296 \\
+                            --RunName BinaryStarAstroRVFit    \\    
                             --StarName Gaia4 --Analysis Binary+RV \\
                             --rv-csv /path/to/rvs.csv
 
@@ -112,13 +115,10 @@ Written to ``<DataParentDirectory>/<StarName>/<RunName>/``,
                                    along-scan and sky plots, the posterior
                                    summary table, the trace plot, and the
                                    RV figures when RVs are fit
-    ``TraceSummary.png``           the posterior summary table on its own
     ``ChainSummary_<RunName>.csv`` the same table as csv
     ``TraceFigure.png``            the trace plot on its own
     ``MCMC_Samples.csv``           posterior samples of the summary variables
-    ``CornerPlot.png``             corner plot; written as ``CornerPlot.pdf``
-                                   instead if the first attempt fails and is
-                                   retried without NaN columns
+    ``CornerPlot.png``             corner plot
 
 Dependencies
 ------------
@@ -135,12 +135,6 @@ The single-star along-scan model follows GAIA-C3-TN-LU-LL-061, available
 from the public DPAC documents page:
 https://www.cosmos.esa.int/web/gaia/public-dpac-documents
 """
-
-
-# python xo_Astrometry.py --StarName "Gaia4" --SOURCE_ID 1457486023639239296 
-#     --Analysis "Binary+RV" 
-#     --rv-csv "../Data/Gaia4/Gaia4b_GummiHARPSN_HPF2026.csv"
-
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
@@ -159,6 +153,7 @@ import argparse
 try:
 	pwd = os.path.dirname(os.path.abspath(__file__))
 except:
+    # Do not need to modify if running as a script
 	pwd = r'/home/skanodia/resgroupdir/pyGaiafits/Code'
 
 print(pwd)
@@ -228,31 +223,27 @@ XML_Path = os.path.join(DataParentDirectory, "GAIA_DR4_PRERELEASE_EPOCH_ASTROMET
 
 
 # ----------------------------------------------------------------------
-# Defaults. SOURCE_ID, StarName, FitBinary and FitRV are overridden by the
+# Defaults. SOURCE_ID, RunName, StarName, FitBinary and FitRV are overridden by the
 # command-line arguments below whenever those are given (FitBinary and
 # FitRV through --Analysis). The rest are only changed by editing here:
 #   GuessOrbit : seed the orbit from scan_orbit_init's Thiele-Innes grid
 #                search instead of broad uninformative priors.
 #   LinRVTrend : True fits a linear systemic RV trend, False (default)
 #                linear + quadratic. Only used when FitRV is on.
-#   RunName    : descriptive middle of the output name; it is a fixed
-#                string, so update it by hand if the settings change.
 #   Nchains    : parallel NUTS chains, also the number of cores used.
 # The first StarName assignment is immediately overwritten by the second.
 # ----------------------------------------------------------------------
-# Single Star
-SOURCE_ID = 1457486023639239296 # Gaia-4
 
+SOURCE_ID = 1457486023639239296 # Gaia-4
 StarName = SOURCE_ID
 StarName = 'Gaia4'
+RunName = 'TestBinaryFit'
 FitBinary = True
 FitRV = False
+
+
 GuessOrbit = True
-
-LinRVTrend = False
-
-    
-RunName = 'AllRVs_QuadTrend_UseEverything'
+LinRVTrend = False    
 Nchains = 3
 
 
@@ -267,6 +258,7 @@ parser = argparse.ArgumentParser(description="Run Astrometric Fit")
 
 # Add arguments to the parser
 parser.add_argument("--StarName", required=False, type=str, default=None, help="StarName")
+parser.add_argument("--RunName", required=False, type=str, default=None, help="RunName")
 parser.add_argument("--SOURCE_ID", required=False, type=int, default=None, help="SOURCE_ID")
 parser.add_argument("--Analysis", choices=["Single", "Binary", "Binary+RV"], default=None)
 parser.add_argument("--rv-csv", required=False, type=str, default=None,
@@ -276,6 +268,9 @@ args = vars(parser.parse_args())
 
 if args['StarName'] is not None:
 	StarName = args['StarName']
+
+if args['RunName'] is not None:
+    RunName = args['RunName']
 
 if args['SOURCE_ID'] is not None:
 	SOURCE_ID = args['SOURCE_ID']
@@ -298,9 +293,9 @@ if FitRV and args['rv_csv'] is None:
 
 ########################################
 ########################################
-if FitRV: Prefix = 'BinaryRVFit'
-elif FitBinary: Prefix = 'BinaryFit'
-else: Prefix = 'SingleFit'
+if FitRV: Prefix = 'NonSingleStar_wRV'
+elif FitBinary: Prefix = 'NonSingleStar'
+else: Prefix = 'SingleStar'
 
 RunName = Prefix + '_' + RunName + '_' +  StarName
 
@@ -319,6 +314,11 @@ if os.path.exists(ResultDirectory):
 	print(ResultDirectory + " already exists")
 else:
 	os.mkdir(ResultDirectory)
+
+########################################
+########################################
+
+print("The script is currently setup to load the DR4 pre-release astrometry but should be modified for DR4 upon release (exp. Dec 2026)")
 
 ########################################
 ########################################
@@ -477,9 +477,9 @@ with pm.Model() as model:
     print(model.check_test_point())
     map_soln = model.test_point
     map_soln = pmx.optimize(map_soln)   # final joint stage, everything moves together
-    print("====\nFinished MAP optimization\n====")
+    print(f"{'='*25}\Finished MAP optimization\n{'='*25}")
 
-print(""" Finished Single Star Fit """)
+print("""Finished Single Star Fit """)
 
 print(model.logp(map_soln))
 for k, v in sorted(map_soln.items()):
@@ -741,11 +741,11 @@ if FitBinary:
         # Two-stage MAP: move only the astrometric parameters with the orbit
         # held at its seeded values, then release everything. Far more robust
         # than optimizing the full set from the grid-search start in one go.
-        print("====\nStarting MAP optimization\n====")        
+        print(f"{'='*25}\nStarting MAP optimization\n{'='*25}")      
         map_soln = model.test_point
         map_soln = pmx.optimize(map_soln, vars=[Parallax,  PMRA, PMDec, dRA, dDec, logAstroJitter])
         map_soln = pmx.optimize(map_soln)   # final joint stage, everything moves together
-        print("====\nFinished MAP optimization\n====")
+        print(f"{'='*25}\nFinished MAP optimization\n{'='*25}")
             
 # Log-probability and scalar MAP values of the final model. In Single mode
 # this repeats the stage-1 printout above.
@@ -767,10 +767,10 @@ for k, v in sorted(map_soln.items()):
 ############ MAP ############
 
 SS_MAP_ALCentroidPlot = PlotAstroAL(AstroDataset, soln=map_soln, trace=None, outdir=ResultDirectory,
-                                    label="Single Star MAP", ModelKey='w_SSModel')
+                                    label="Single Star", ModelKey='w_SSModel')
 if FitBinary:
     BS_MAP_ALCentroidPlot = PlotAstroAL(AstroDataset, soln=map_soln, trace=None, outdir=ResultDirectory,
-                                        label="Non Single Star MAP", ModelKey='w_BSModel',
+                                        label="Non Single Star", ModelKey='w_BSModel',
                                         OrbitKey='w_orb')
 
 MAP_SkyPlot = PlotAstroSky(AstroDataset, soln=map_soln, trace=None, outdir=ResultDirectory,
@@ -785,7 +785,7 @@ if FitBinary & FitRV:
 # is high because the orbital parameters are strongly correlated; raise
 # tune/draws for poorly constrained orbits.
 # ----------------------------------------------------------------------
-print("==============\nStarting Posterior Estimation chains\n==============")
+print(f"{'='*29}\nStarting Posterior Estimation\n{'='*29}")
 
 with model:
 	trace = pmx.sample(
@@ -798,16 +798,16 @@ with model:
 		target_accept=0.95,
 	)
 print(datetime.datetime.now())
-print("==============\nFinished Posterior Estimation\n==============")
+print(f"{'='*29}\nFinished Posterior Estimation\n{'='*29}")
 
 
 ############ MCMC ############
 
 SS_MCMC_ALCentroidPlot = PlotAstroAL(AstroDataset, soln=None, trace=trace, outdir=ResultDirectory,
-                                     label="Single Star MCMC", ModelKey='w_SSModel')
+                                     label="Single Star", ModelKey='w_SSModel')
 if FitBinary:
     BS_MCMC_ALCentroidPlot = PlotAstroAL(AstroDataset, soln=None, trace=trace, outdir=ResultDirectory,
-                                         label="Non Single Star MCMC", ModelKey='w_BSModel',
+                                         label="Non Single Star", ModelKey='w_BSModel',
                                          OrbitKey='w_orb')
 
 MCMC_SkyPlot = PlotAstroSky(AstroDataset, soln=None, trace=trace, outdir=ResultDirectory,
@@ -822,27 +822,14 @@ var_names = ['PMRA', 'PMDec', 'dRA', 'dDec', 'logAstroJitter', 'Parallax']
 
 if FitBinary:
     var_names.append("logPeriod")
-    var_names.append("period")
-    var_names.append("period_years")    
     var_names.append("loga0")    
-    var_names.append("a0_mas")        
     var_names.append("tperi")    
     var_names.append("ecc")    
     var_names.append("phase")     
-    
     var_names.append("omega")    
-    var_names.append("omega_deg")  
-    
     var_names.append("Omega")    
-    var_names.append("Omega_deg")    
-
     var_names.append("cosi")    
-    var_names.append("incl_deg")  
 
-    var_names.append("A_TI")  
-    var_names.append("B_TI")  
-    var_names.append("F_TI")  
-    var_names.append("G_TI")  
 
 if FitRV:
     var_names.append("logK_RV")
@@ -853,6 +840,43 @@ if FitRV:
     
 ########################################################################
 
+with model:
+	TracePlot = pm.traceplot(trace, var_names=var_names)
+	TraceFigure = TracePlot[0][0].get_figure()
+	TraceFigure.savefig(os.path.join(ResultDirectory, 'TraceFigure.png'))
+	samples = pm.trace_to_dataframe(trace, varnames=var_names)
+     
+samples.to_csv(os.path.join(ResultDirectory, 'MCMC_Samples.csv'), index=False)
+
+print(f"{'='*29}\nFinished Saving Trace Results\n{'='*29}")
+
+########## Corner Plot #################
+
+MCMCColumns = np.array(var_names)
+try:
+    CornerPlot = corner.corner(samples, quantiles=[0.16, 0.5, 0.84],
+            show_titles=True, title_kwargs={"fontsize": 12}, use_math_text=True)
+    CornerPlot.savefig(os.path.join(ResultDirectory, 'CornerPlot.png'), dpi=360)
+    print(f"{'='*27}\nFinished Saving Corner Plot\n{'='*27}")
+except Exception as e:
+    print(e)
+    print("Could not save corner plot")
+
+
+########################################################################
+if FitBinary:
+    var_names.append("period")
+    var_names.append("period_years") 
+    var_names.append("a0_mas")     
+    var_names.append("omega_deg")  
+    var_names.append("Omega_deg")    
+    var_names.append("incl_deg")  
+    var_names.append("A_TI")  
+    var_names.append("B_TI")  
+    var_names.append("F_TI")  
+    var_names.append("G_TI")      
+    
+########################################################################
 with model:
 	df = pm.summary(
 		trace, var_names=var_names, stat_funcs = {"median":np.median}
@@ -868,42 +892,11 @@ ax.axis('off')
 ax.set_title('Summary from {} chains'.format(trace.nchains))
 the_table = ax.table(cellText=df.values, colLabels=df.columns, loc='center')
 the_table.auto_set_font_size(False)
-TracesSummary.savefig(os.path.join(ResultDirectory, 'TraceSummary.png'))
-df.to_csv(os.path.join(ResultDirectory, 'ChainSummary_{}.csv'.format(RunName)))
+
+df.to_csv(os.path.join(ResultDirectory, 'ChainSummary_{}.csv'.format(RunName)), index=False)
 
 
 
-with model:
-	TracePlot = pm.traceplot(trace, var_names=var_names)
-	TraceFigure = TracePlot[0][0].get_figure()
-	TraceFigure.savefig(os.path.join(ResultDirectory, 'TraceFigure.png'))
-	samples = pm.trace_to_dataframe(trace, varnames=var_names)
-     
-samples.to_csv(os.path.join(ResultDirectory, 'MCMC_Samples.csv'), index=False)
-
-
-print("==============\nFinished Generating Trace Results\n==============")
-########## Corner Plot #################
-# First attempt uses every summary variable. If corner raises -- usually
-# because a column is all or partly NaN -- the bare except retries with
-# the NaN columns dropped. Note the retry saves CornerPlot.pdf where the
-# first attempt saves CornerPlot.png, and the bare except will also
-# swallow errors unrelated to NaNs. The corner plot is not added to the
-# multi-page PDF.
-try:
-	CornerPlot = corner.corner(samples, quantiles=[0.16, 0.5, 0.84],
-			show_titles=True, title_kwargs={"fontsize": 12}, use_math_text=True)
-	CornerPlot.savefig(os.path.join(ResultDirectory, 'CornerPlot.png'), dpi=360)     
-except:
-	MCMCColumns = np.array(samples.columns)
-	iii = [~ np.any(np.isnan(samples[c])) for c in MCMCColumns]
-	NonNanColumns =  MCMCColumns[iii]
-	print("NaN columns = "+ MCMCColumns[~np.array(iii)])
-	CornerPlot = corner.corner(samples[NonNanColumns], quantiles=[0.16, 0.5, 0.84],
-			show_titles=True, title_kwargs={"fontsize": 12}, use_math_text=True)
-	CornerPlot.savefig(os.path.join(ResultDirectory, 'CornerPlot.pdf'), dpi=360)
-
-print("==============\nFinished Generating Corner Plot \n==============")
 
 ########################################################################
 ########################################################################
@@ -946,7 +939,8 @@ if FitBinary & FitRV:
     pp.savefig(MCMCPosterior)
 
 pp.close()
-print("==============\nSaved everything for {}\n==============".format(RunName))
+print(f"{'='*9}\nAll Done!\n{'='*9}")
+
 ########################################################################
 ########################################################################
 
