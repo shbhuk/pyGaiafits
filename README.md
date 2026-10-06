@@ -1,6 +1,6 @@
 # pyGaiafits
 
-Publicly released alongside the manuscript "A Joint Astrometric and Radial Velocity Study of Gaia-4b" by Kanodia et al. (in prep.)
+Publicly released alongside the manuscript "A Joint Study of Epoch Astrometry and Radial Velocities of Gaia-4b" by Kanodia et al. (in prep.)
 
 # Overview
 
@@ -9,10 +9,15 @@ along-scan (AL) abscissae — for a single source, using PyMC3 and `exoplanet`.
 It always fits a 5-parameter single-star model first, then optionally adds a
 Keplerian photocentre orbit and a jointly-fit radial velocity model, seeded
 from the single-star MAP solution. Each stage is MAP-optimized and then
-sampled with NUTS.
+sampled with NUTS. For larger expected astrometric amplitudes, the script can be modified 
+to directly jump to a binary fit without the initial single-star solution.
 
 Only the along-scan direction enters the likelihood; the across-scan
 measurements are not used. These are typically only relevant for bright stars for Gaia.
+
+Upon release of Gaia DR4, we will update this repository to directly query DR4 astrometry
+and potentially also allow for the use of across-scan astrometric measurements 
+(typically G < 13).
 
 
 # Setup
@@ -75,20 +80,21 @@ on `sys.path`):
 
 ```
 # 5-parameter single-star fit
-python Code/xo_Astrometry.py --StarName Gaia4 --SOURCE_ID 1457486023639239296 --Analysis Single
+python Code/xo_Astrometry.py --StarName Gaia4 --SOURCE_ID 1457486023639239296 --RunName SingleStarFit --Analysis Single
 
 # single star + astrometric orbit
-python Code/xo_Astrometry.py --StarName Gaia4 --SOURCE_ID 1457486023639239296 --Analysis Binary
+python Code/xo_Astrometry.py --StarName Gaia4 --SOURCE_ID 1457486023639239296 --RunName BinaryStarFit --Analysis Binary
 
 # the above, fit jointly with radial velocities
 python Code/xo_Astrometry.py --StarName Gaia4 --SOURCE_ID 1457486023639239296 \
-    --Analysis "Binary+RV" --rv-csv "../Data/Gaia4/Gaia4b_GummiHARPSN_HPF2026.csv"
+    --RunName BinaryStarAstroRVFit --Analysis "Binary+RV" --rv-csv "../Data/Gaia4/Gaia4b_GummiHARPSN_HPF2026.csv"
 ```
 
 | Argument | Required | Description |
 | --- | --- | --- |
 | `--SOURCE_ID` | no | Gaia `source_id` to fit. If it is not in the input VOTable the script exits and lists the `source_id`s that are. |
 | `--StarName` | no | Label for the output directory and filenames. |
+| `--RunName` | no | Descriptive subdirectory name for individual runs. |
 | `--Analysis` | no | One of `Single`, `Binary`, `Binary+RV`. Defaults to `Binary`. |
 | `--rv-csv` | for `Binary+RV` | Path to the combined RV file. |
 
@@ -159,7 +165,7 @@ Written to `<DataParentDirectory>/<StarName>/<RunName>/`:
 | `Plots_<RunName>.pdf` | orbit initialization, MAP and MCMC along-scan and sky plots, posterior summary table, trace plot, and the RV figures when RVs are fit |
 | `ChainSummary_<RunName>.csv` | posterior summary table |
 | `MCMC_Samples.csv` | posterior samples of the summarized parameters |
-| `TraceSummary.png`, `TraceFigure.png` | summary table and trace plot as images |
+| `TraceFigure.png` | trace plot as images |
 | `CornerPlot.png` | corner plot |
 
 Re-running the same mode on the same star reuses the directory and overwrites
