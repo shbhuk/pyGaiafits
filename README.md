@@ -180,7 +180,6 @@ Edit these near the top of `xo_Astrometry.py`:
 | `GuessOrbit` | `True` | Seed the orbit from the grid search rather than from broad uninformative priors. |
 | `LinRVTrend` | `False` | `True` fits a linear systemic RV trend; `False` fits linear + quadratic. |
 | `Nchains` | `3` | NUTS chains, and the number of cores requested. |
-| `RunName` | `'AllRVs_QuadTrend_UseEverything'` | Descriptive middle of the output directory name; it is a fixed string, so update it by hand if the settings above change. |
 
 Sampling uses `tune=3000`, `draws=1500` per chain and dominates the runtime.
 
