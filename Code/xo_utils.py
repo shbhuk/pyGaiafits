@@ -662,6 +662,7 @@ def scan_orbit_init(data, map_soln=None, P_min=None, P_max=None, oversample=10.0
         ax.semilogx(Pgrid, chi, lw=0.7)
         ax.axvline(P, color="C1", ls="--", label=f"adopted P = {P:.1f} d")
         ax.set_xlabel("Period [days]"); ax.set_ylabel(r"$\chi^2$")
+        ax.set_title("Epoch Astrometry Period Guess")
         ax.legend(); fig.tight_layout()
         # fig.savefig(plot_to, dpi=150); plt.close(fig)
 

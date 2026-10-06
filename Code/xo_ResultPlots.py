@@ -321,8 +321,8 @@ def ResidualPlots(xdata, ydata,
     axes[0].set_ylabel(Ylabel)
     axes[1].set_ylabel('Residuals')
     axes[0].set_title(Title)
-    axes[0].legend()
-    axes[1].legend()
+    axes[0].legend(fontsize=10)
+    axes[1].legend(fontsize=10)
     fig.subplots_adjust(hspace=0.02)
     plt.tight_layout()
     return fig, axes
@@ -429,8 +429,8 @@ def PlotAstroAL(data, soln=None, trace=None, outdir=None, label='',
         axes[1].errorbar(tB, rB, yerr=eB, fmt='o', ms=4, color='r', capsize=2,
                          lw=1.2, zorder=5,
                          label='epoch mean, RMS {:.3f} mas'.format(np.nanstd(rB)))
-        axes[0].legend(fontsize=8)
-        axes[1].legend(fontsize=8)
+        axes[0].legend(fontsize=10)
+        axes[1].legend(fontsize=10)
  
     axes[1].axhline(0, color='0.5', lw=0.8, zorder=-5)
  
