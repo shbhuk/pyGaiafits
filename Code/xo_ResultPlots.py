@@ -593,7 +593,7 @@ def PlotAstroSky(data, soln=None, trace=None, outdir=None, label='',
     Ax.set_ylabel(r"$\Delta\delta$ [mas]")
     Ax.set_title("Motion on the sky")
     Ax.invert_xaxis()
-    Ax.legend(loc='best', fontsize=8)
+    Ax.legend(loc='best', fontsize=10)
  
     ResidPanel(axes[0, 1], wObs - w_SS, "Single star model AL residuals")
  
@@ -621,7 +621,7 @@ def PlotAstroSky(data, soln=None, trace=None, outdir=None, label='',
         Ax.set_ylabel(r"$\Delta\delta$ [mas]")
         Ax.set_title("Astrometric orbit")
         Ax.invert_xaxis()
-        Ax.legend(loc='best', fontsize=8)
+        Ax.legend(loc='best', fontsize=10)
  
         ResidPanel(axes[1, 1], wObs - w_BS, "Binary star model AL residuals")
  

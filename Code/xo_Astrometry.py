@@ -811,7 +811,7 @@ if FitBinary:
                                          OrbitKey='w_orb')
 
 MCMC_SkyPlot = PlotAstroSky(AstroDataset, soln=None, trace=trace, outdir=ResultDirectory,
-                            label="MCMC")
+                            label=StarName)
 
 
 ########################################################################
