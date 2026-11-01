@@ -1,6 +1,6 @@
 # pyGaiafits
 
-Publicly released alongside the manuscript "A Joint Study of Epoch Astrometry and Radial Velocities of Gaia-4b" by Kanodia et al. (in prep.)
+Publicly released alongside the manuscript "A Joint Study of Epoch Astrometry and Radial Velocities of Gaia-4b" by Kanodia et al. (submitted to AAS journals)
 
 # Overview
 
@@ -186,8 +186,8 @@ Sampling uses `tune=3000`, `draws=1500` per chain and dominates the runtime.
 
 # Citation
 
-If you use `pyGaiafits` in your work, please cite "A Joint Astrometric and Radial Velocity Study
-of Gaia-4b" by Kanodia et al. (in prep.), along with the software it is built on:
+If you use `pyGaiafits` in your work, please cite "A Joint Study of Epoch Astrometry
+and Radial Velocities of Gaia-4b" by Kanodia et al. (submitted to AAS journals), along with the software it is built on:
 
 **Orbit modelling and inference**
 
