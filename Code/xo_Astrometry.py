@@ -24,9 +24,9 @@ Analysis modes
     Thiele-Innes grid search in ``xo_utils.scan_orbit_init``.
 ``Binary+RV``
     The above plus a joint RV model sharing (P, T_peri, e, omega) with the
-    astrometric orbit. The RV semi-amplitude K is free rather than derived
-    from a0, and a per-instrument offset and jitter and a shared quadratic
-    (optionally linear) systemic trend are fit alongside.
+    astrometric orbit. The RV semi-amplitude is by default derived from 
+    a0, i, P and e so a single orbit fits both datasets (DeriveKfromA0=True);
+    set DeriveKfromA0=False to sample K independently as a consistency check.
 
 Only the AL direction enters the likelihood; the across-scan (AC)
 measurements are not used.
@@ -123,7 +123,7 @@ Written to ``<DataParentDirectory>/<StarName>/<RunName>/``,
 Dependencies
 ------------
 Third-party: numpy, matplotlib, pymc3, pymc3_ext, exoplanet, theano, corner,
-and arviz (used by ``pm.summary`` / ``pm.traceplot``). 
+astropy, and arviz (used by ``pm.summary`` / ``pm.traceplot``). 
 
 Local modules shipped alongside this file: ``xo_utils`` (data loading, the
 orbit-grid initializer, RV reading), ``xo_ResultPlots`` (all figures), and
@@ -149,6 +149,9 @@ import corner
 
 import datetime
 import argparse
+
+import astropy.units as u
+AuPerYearInMetresPerSecond = (1.0 * u.au / u.yr).to_value(u.m / u.s)
 
 try:
 	pwd = os.path.dirname(os.path.abspath(__file__))
@@ -231,6 +234,12 @@ XML_Path = os.path.join(DataParentDirectory, "GAIA_DR4_PRERELEASE_EPOCH_ASTROMET
 #   LinRVTrend : True fits a linear systemic RV trend, False (default)
 #                linear + quadratic. Only used when FitRV is on.
 #   Nchains    : parallel NUTS chains, also the number of cores used.
+#   DeriveKfromA0 : True derives the RV semi-amplitude from the astrometric
+#                photocentre amplitude, so one orbit fits both datasets.
+#                This assumes a0 = a1 (beta = 0, a dark companion). False
+#                samples K independently, leaving the astrometric and
+#                spectroscopic amplitudes free to be compared as a
+#                consistency check. Only used when FitRV is on.
 # The first StarName assignment is immediately overwritten by the second.
 # ----------------------------------------------------------------------
 
@@ -244,6 +253,7 @@ FitRV = False
 
 GuessOrbit = True
 LinRVTrend = False    
+DeriveKfromA0 = False
 Nchains = 3
 
 
@@ -345,7 +355,6 @@ ParallaxFactorDec = AstroDataset['ParallaxFactorAl'].values * np.cos(Theta) - As
 # observing baseline.
 if FitBinary & GuessOrbit:
     InitBinaryOrbitPriors, OrbitGuessFig  = scan_orbit_init(data=AstroDataset, map_soln=None, P_min=None, P_max=None , oversample=10.0, top_k=5, MakePlot=True)
-
 
 ########################################################################
 ########################################################################
@@ -477,7 +486,7 @@ with pm.Model() as model:
     print(model.check_test_point())
     map_soln = model.test_point
     map_soln = pmx.optimize(map_soln)   # final joint stage, everything moves together
-    print(f"{'='*25}\Finished MAP optimization\n{'='*25}")
+    print(f"{'='*25}\nFinished MAP optimization\n{'='*25}")
 
 print("""Finished Single Star Fit """)
 
@@ -575,7 +584,9 @@ if FitBinary:
             # the same axis as dt.
             period_years = pm.Deterministic('period_years', tt.exp(logPeriod))
             period = pm.Deterministic('period', period_years * 365.25)
-            a0_mas = pm.Deterministic("a0_mas", tt.exp(loga0))                    # mas  
+            a0_mas = pm.Deterministic("a0_mas", tt.exp(loga0))     # mas  
+            a0_au = pm.Deterministic("a0_au", a0_mas / Parallax)   # AU
+            
             incl = pm.Deterministic('incl', tt.arccos(cosi))
             pm.Deterministic("incl_deg", incl * 180.0 / np.pi)
         
@@ -598,9 +609,8 @@ if FitBinary:
             G = pm.Deterministic("G_TI", -a0_mas * (sw * sO - cw * cO * cosi))    
         
             # Define the orbit. a = -a0_mas: exoplanet places the companion at
-            # minus the semi-major axis.
-            # Working in mas means no stellar mass or distance enters -- AL
-            # astrometry constrains only the angular orbit.
+            # minus the semi-major axis. Working in mas means no stellar mass or distance enters
+            # -- AL astrometry constrains only the angular orbit.
             # Define the orbit
             orbit = xo.orbits.KeplerianOrbit(period=period_years, a=-a0_mas,
                                              t_periastron=tperi, 
@@ -643,17 +653,29 @@ if FitBinary:
             # Joint RV fit: shares (Period, tperi, ecc, omega) with the
             # astrometric orbit above. get_true_anomaly only depends on
             # those four (not on 'a'), so it's safe to reuse `orbit` here
-            # even though its 'a' was set to -a0 for the astrometric fit --
-            # K_RV is its own free parameter, not derived from a0.
+            # even though its 'a' was set to -a0 for the astrometric fit
+            # -- only its angular elements are used here.
             if FitRV:
                 
-                logK_RV = pm.Uniform("logK_RV", lower=np.log(1e-2), upper=np.log(1e6),
-                    testval=np.log(500.0), shape=1)  # m/s
-                K_RV = pm.Deterministic("K_RV", tt.exp(logK_RV))
+                if DeriveKfromA0:
+                    # Self-consistent amplitude: K is not free but follows from
+                    # the astrometric orbit,
+                    #     K = 2 pi a0 sin(i) / (P sqrt(1 - e^2)).
+                    # This assumes the photocentre traces the primary's orbit
+                    # (a0 = a1, beta = 0). Run with DeriveKfromA0 = False
+                    # first to confirm the two amplitudes agree before
+                    # imposing it.
+                    K_RV = pm.Deterministic("K_RV",
+                        2.0 * np.pi * a0_au * tt.sin(incl)
+                        / (period_years * tt.sqrt(1.0 - ecc ** 2))
+                        * AuPerYearInMetresPerSecond)
+                else:
+                    # K_RV is its own free parameter, not derived from a0.
+                    logK_RV = pm.Uniform("logK_RV", lower=np.log(1e-2), upper=np.log(1e6),
+                        testval=np.log(500.0))  # m/s
+                    K_RV = pm.Deterministic("K_RV", tt.exp(logK_RV))
+
                 K0 = pm.Deterministic("K0", K_RV)
-
-                # `K_pred = 2 pi a0_au sin(i) / (P sqrt(1-e^2)) * 4740.470446` [m/s]
-
                 
                 # Shared systemic RV trend: linear + quadratic in years,
                 # relative to X_RVs_Ref (mean RV time, in BJD)
@@ -699,8 +721,7 @@ if FitBinary:
                     # In exoplanet's frame (z towards the observer), the body
                     # that get_planet_position places at +a0 -- the photocentre
                     # here -- has line-of-sight velocity
-                    # +get_radial_velocity(K). The minus sign therefore models
-                    # RV motion opposite to the photocentre. 
+                    # +get_radial_velocity(K).
                     vrad = - orbit.get_radial_velocity(t, K=K_RV)
                     pm.Deterministic("vrad" + name, vrad)
 
@@ -832,7 +853,6 @@ if FitBinary:
 
 
 if FitRV:
-    var_names.append("logK_RV")
     var_names.append("K_RV")
     var_names.append("RVTrend")
     var_names.append("RVOffset")
@@ -868,6 +888,7 @@ if FitBinary:
     var_names.append("period")
     var_names.append("period_years") 
     var_names.append("a0_mas")     
+    var_names.append("a0_au")         
     var_names.append("omega_deg")  
     var_names.append("Omega_deg")    
     var_names.append("incl_deg")  
