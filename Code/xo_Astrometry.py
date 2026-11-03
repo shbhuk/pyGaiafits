@@ -66,21 +66,26 @@ The photocentre orbit
     +a0 -- the photocentre, which for a faint companion moves with the
     primary. It returns ``(x, y, z)`` with x = North (Dec offset) and
     y = East (RA offset), which is why ``w_orb = y*sin(Theta) +
-    x*cos(Theta)``. exoplanet reads ``a`` as R_sun and ``period`` as days and
-    derives a total mass from them; with these inputs that mass is
-    meaningless (and negative), but none of the orbit methods used here
-    depend on it.
+    x*cos(Theta)``. exoplanet reads ``a`` as R_sun and ``period`` as days
+    and derives a total mass from them, which is negative here and has no
+    physical meaning. It cancels rather than being ignored: exoplanet forms
+    the orbit as ``a_planet = -a * m_star / m_total``, and with no mass
+    passed ``m_planet`` is zero, so that ratio is exactly 1 and
+    ``a_planet = +a0``. Supplying ``m_planet`` would break the cancellation
+    and let the negative mass through.
 
 Angle degeneracy
     The sky orbit is unchanged under (omega, Omega) -> (omega + 180 deg,
     Omega + 180 deg): the Thiele-Innes constants are exactly invariant, so
-    in ``Binary`` mode those two angles are only defined up to that joint
-    flip. The RVs do distinguish the two, and ``Binary+RV`` reports the
-    branch in which omega is the argument of periastron of the photocentre
-    (equivalently, for a dark companion, the primary) orbit -- the
-    convention used by the Gaia NSS tables and the double-star literature.
-    The sampled pair (omega and Omega) are for the companion while
-    the _deg outputs are the photocentre’s, on the Gaia NSS convention.
+    the flip traces an identical path on the sky and reverses only the
+    line-of-sight motion. In ``Binary`` mode the two angles are therefore
+    defined only up to that flip, and the RVs break it in ``Binary+RV``.
+
+    ``omega_deg`` and ``Omega_deg`` are the photocentre's elements --
+    for a dark companion, the primary's -- on the convention used by the
+    Gaia NSS tables and the double-star literature. They sit 180 deg from
+    the sampled ``omega`` and ``Omega`` because of the sign used at the RV
+    model; see the note there.
 
 
 Command-line usage
@@ -729,13 +734,16 @@ if FitBinary:
                     # a_star = 0, so get_planet_position returns the photocentre
                     # and get_radial_velocity(K) = +K[cos(f+w) + e cos w] is the
                     # velocity of that same body. The minus sign below therefore
-                    # makes the sampled (omega, Omega) the companion's rather
-                    # than the photocentre's. That is deliberate: it is the
-                    # parameterisation the MAP converges from reliably, and the
-                    # joint 180 deg flip leaves the Thiele-Innes constants and
-                    # every other parameter exactly unchanged. omega_deg and
-                    # Omega_deg add the 180 deg back, so the reported angles are
-                    # the photocentre's.
+                    # puts the sampled (omega, Omega) 180 deg from the
+                    # photocentre's -- not at the companion's elements, which
+                    # would be (omega + 180 deg, Omega), but at the mirror
+                    # solution that traces the same path on the sky with the
+                    # line-of-sight motion reversed. That is deliberate: it is
+                    # the parameterisation the MAP converges from reliably, and
+                    # the joint flip leaves the Thiele-Innes constants and every
+                    # other parameter exactly unchanged. omega_deg and Omega_deg
+                    # add the 180 deg back, so the reported angles are the
+                    # photocentre's.
                     vrad = - orbit.get_radial_velocity(t, K=K_RV)
                     pm.Deterministic("vrad" + name, vrad)
 

@@ -49,7 +49,6 @@ arviz==0.11.1
 theano==1.0.5
 pymc3==3.9.3
 exoplanet==0.4.4
-uncertainties==3.1.5
 astropy==4.2
 
 pymc3-ext==0.0.2
@@ -62,7 +61,7 @@ Then you will follow the instructions below and clone this GitHub repository. Se
 
 ## Directory Structure
 You need to have a `DataParentDirectory` with a separate directory for each star (e.g. `Gaia4`, etc.), and then point to this path in 
-`Code\Config.py`. The scripts will refer to `DataParentDirectory` for the astrometry dataset for DR4 pre-release, but can be changed later for DR4. 
+`Code/Config.py`. The scripts will refer to `DataParentDirectory` for the astrometry dataset for DR4 pre-release, but can be changed later for DR4. 
 I suggest using this same directory for the RV data files too, but technically the RV file can be stored anywhere.
 
 ```
@@ -71,7 +70,7 @@ pyGaiafits
 
 
 DataParentDirectory # Point to this path in Code/Config.py
-    GAIADR4PreReleaseXML.XML
+    GAIA_DR4_PRERELEASE_EPOCH_ASTROMETRY_RAW.xml
 |   Star1Name   
 |   |   RV_timeseries.csv
 |   Star2Name
@@ -134,17 +133,14 @@ and au (`a0_au`).
 
 ## Angle convention
 
-The sky orbit is exactly invariant under the joint flip (omega, Omega) →
-(omega + 180°, Omega + 180°), which leaves the Thiele-Innes constants and every
-other parameter unchanged. Only the radial velocities distinguish the two.
+`omega_deg` and `Omega_deg` are the photocentre's argument of periastron and
+longitude of ascending node, on the convention used by the Gaia NSS tables.
 
-`omega_deg` and `Omega_deg` are reported for the **photocentre's** orbit, on the
-convention used by the Gaia NSS tables and the double-star literature: the
-ascending node is the one at which the photocentre recedes from the observer,
-and omega is measured from it in the direction of motion. In `Binary+RV` the RVs
-fix which of the two branches that is; in `Binary` the astrometry alone cannot,
-so the pair is only defined up to the joint flip and should be quoted as such.
-Both are given on [0°, 360°).
+The astrometry alone cannot determine them. The along-scan model is invariant
+under (omega, Omega) → (omega + 180°, Omega + 180°), which traces an identical
+path on the sky and reverses only the line-of-sight motion — so `Binary`
+constrains the pair only up to that flip, while in `Binary+RV` the radial
+velocities break it.
 
 # Input data
 
