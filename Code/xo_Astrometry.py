@@ -73,10 +73,15 @@ The photocentre orbit
 
 Angle degeneracy
     The sky orbit is unchanged under (omega, Omega) -> (omega + 180 deg,
-    Omega + 180 deg), so in ``Binary`` mode those two angles are only
-    defined up to that joint flip. RVs break the degeneracy in
-    ``Binary+RV`` -- see the note at the RV model on how the sign used
-    there fixes which of the two solutions is reported.
+    Omega + 180 deg): the Thiele-Innes constants are exactly invariant, so
+    in ``Binary`` mode those two angles are only defined up to that joint
+    flip. The RVs do distinguish the two, and ``Binary+RV`` reports the
+    branch in which omega is the argument of periastron of the photocentre
+    (equivalently, for a dark companion, the primary) orbit -- the
+    convention used by the Gaia NSS tables and the double-star literature.
+    The sampled pair (omega and Omega) are for the companion while
+    the _deg outputs are the photocentre’s, on the Gaia NSS convention.
+
 
 Command-line usage
 ------------------
@@ -253,7 +258,7 @@ FitRV = False
 
 GuessOrbit = True
 LinRVTrend = False    
-DeriveKfromA0 = False
+DeriveKfromA0 = True
 Nchains = 3
 
 
@@ -592,8 +597,10 @@ if FitBinary:
         
             ecc = pm.Deterministic("ecc", tt.sum(ecs ** 2))
             omega = pm.Deterministic("omega", tt.arctan2(ecs[1], ecs[0]))
-            pm.Deterministic("omega_deg", omega * 180.0 / np.pi) # Argument of periastron
-            pm.Deterministic("Omega_deg", Omega * 180.0 / np.pi) # Longitude of Ascending Node
+            # pm.Deterministic("omega_deg", omega * 180.0 / np.pi) # Argument of periastron
+            # pm.Deterministic("Omega_deg", Omega * 180.0 / np.pi) # Longitude of Ascending Node
+            pm.Deterministic("omega_deg", ((omega + np.pi) * 180.0 / np.pi) % 360.0) # Argument of periastron
+            pm.Deterministic("Omega_deg", ((Omega + np.pi) * 180.0 / np.pi) % 360.0) # Longitude of Ascending Node
             tperi = pm.Deterministic("tperi", period_years * phase / (2.0 * np.pi))  # yr, J2017.5
             
             # Thiele-Innes constants in mas, tracked for comparison with
@@ -675,7 +682,7 @@ if FitBinary:
                         testval=np.log(500.0))  # m/s
                     K_RV = pm.Deterministic("K_RV", tt.exp(logK_RV))
 
-                K0 = pm.Deterministic("K0", K_RV)
+                K0 = pm.Deterministic("K0", tt.reshape(K_RV, (1,)))                
                 
                 # Shared systemic RV trend: linear + quadratic in years,
                 # relative to X_RVs_Ref (mean RV time, in BJD)
@@ -718,10 +725,17 @@ if FitBinary:
                     ''' time t is expected in the same units as that passed for the orbit '''
                     
                     # Sign convention -- read before interpreting omega/Omega.
-                    # In exoplanet's frame (z towards the observer), the body
-                    # that get_planet_position places at +a0 -- the photocentre
-                    # here -- has line-of-sight velocity
-                    # +get_radial_velocity(K).
+                    # With a = -a0_mas, exoplanet sets a_planet = +a0 and
+                    # a_star = 0, so get_planet_position returns the photocentre
+                    # and get_radial_velocity(K) = +K[cos(f+w) + e cos w] is the
+                    # velocity of that same body. The minus sign below therefore
+                    # makes the sampled (omega, Omega) the companion's rather
+                    # than the photocentre's. That is deliberate: it is the
+                    # parameterisation the MAP converges from reliably, and the
+                    # joint 180 deg flip leaves the Thiele-Innes constants and
+                    # every other parameter exactly unchanged. omega_deg and
+                    # Omega_deg add the 180 deg back, so the reported angles are
+                    # the photocentre's.
                     vrad = - orbit.get_radial_velocity(t, K=K_RV)
                     pm.Deterministic("vrad" + name, vrad)
 
@@ -847,8 +861,8 @@ if FitBinary:
     var_names.append("tperi")    
     var_names.append("ecc")    
     var_names.append("phase")     
-    var_names.append("omega")    
-    var_names.append("Omega")    
+    var_names.append("omega_deg")  
+    var_names.append("Omega_deg")    
     var_names.append("cosi")    
 
 
@@ -889,8 +903,6 @@ if FitBinary:
     var_names.append("period_years") 
     var_names.append("a0_mas")     
     var_names.append("a0_au")         
-    var_names.append("omega_deg")  
-    var_names.append("Omega_deg")    
     var_names.append("incl_deg")  
     var_names.append("A_TI")  
     var_names.append("B_TI")  
