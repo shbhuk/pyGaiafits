@@ -1,6 +1,7 @@
 # pyGaiafits
 
 Publicly released alongside the manuscript "A Joint Study of Epoch Astrometry and Radial Velocities of Gaia-4b" by Kanodia et al. (submitted to AAS journals)
+[![DOI](https://zenodo.org/badge/1378793383.svg)](https://doi.org/10.5281/zenodo.23902098)
 
 # Overview
 
