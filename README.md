@@ -8,7 +8,9 @@ Publicly released alongside the manuscript "A Joint Study of Epoch Astrometry an
 along-scan (AL) abscissae — for a single source, using PyMC3 and `exoplanet`.
 It always fits a 5-parameter single-star model first, then optionally adds a
 Keplerian photocentre orbit and a jointly-fit radial velocity model, seeded
-from the single-star MAP solution. Each stage is MAP-optimized and then
+from the single-star MAP solution. In the joint fit the RV semi-amplitude is by
+default derived from the astrometric photocentre amplitude, so one orbit
+describes both datasets self-consistently. Each stage is MAP-optimized and then
 sampled with NUTS. For larger expected astrometric amplitudes, the script can be modified 
 to directly jump to a binary fit without the initial single-star solution.
 
@@ -87,7 +89,7 @@ python Code/xo_Astrometry.py --StarName Gaia4 --SOURCE_ID 1457486023639239296 --
 
 # the above, fit jointly with radial velocities
 python Code/xo_Astrometry.py --StarName Gaia4 --SOURCE_ID 1457486023639239296 \
-    --RunName BinaryStarAstroRVFit --Analysis "Binary+RV" --rv-csv "../Data/Gaia4/Gaia4b_GummiHARPSN_HPF2026.csv"
+    --RunName BinaryStarAstroRVFit --Analysis "Binary+RV" --rv-csv "Data/Gaia4/Gaia4b_GummiHARPSN_HPF2026.csv"
 ```
 
 | Argument | Required | Description |
@@ -110,9 +112,36 @@ which are currently Gaia-4 (`Gaia4`, `1457486023639239296`).
   (A, B, F, G) recorded as derived quantities. The orbit is seeded by default
   from the Thiele-Innes grid search in `xo_utils.scan_orbit_init`.
 - **`Binary+RV`** — the above plus an RV model sharing (P, T_peri, e, omega)
-  with the astrometric orbit. The RV semi-amplitude K is a free parameter
-  rather than derived from a0, and a per-instrument offset and jitter and a
-  shared quadratic systemic trend are fit alongside.
+  with the astrometric orbit. By default the RV semi-amplitude is *derived*
+  from that same orbit as `K = 2 pi a0 sin(i) / (P sqrt(1 - e^2))`, with a0
+  converted from mas to au by the parallax, so a single Keplerian describes
+  both datasets and the companion mass follows from one orbit rather than from
+  two separately-measured amplitudes. Setting `DeriveKfromA0 = False` samples K
+  independently instead, leaving the astrometric and spectroscopic amplitudes
+  free to be compared. A per-instrument offset and jitter and a shared
+  quadratic systemic trend are fit alongside in both cases.
+
+Deriving K from a0 assumes the photocentre traces the primary's orbit
+(a0 = a1, i.e. a flux ratio beta = 0), which holds for a dark companion. The
+suggested sequence is therefore to fit once with `DeriveKfromA0 = False` and
+confirm that the independently-fit astrometric and spectroscopic amplitudes
+agree, then with `DeriveKfromA0 = True` for the final self-consistent
+parameters. The photocentre semi-major axis is reported in both mas (`a0_mas`)
+and au (`a0_au`).
+
+## Angle convention
+
+The sky orbit is exactly invariant under the joint flip (omega, Omega) →
+(omega + 180°, Omega + 180°), which leaves the Thiele-Innes constants and every
+other parameter unchanged. Only the radial velocities distinguish the two.
+
+`omega_deg` and `Omega_deg` are reported for the **photocentre's** orbit, on the
+convention used by the Gaia NSS tables and the double-star literature: the
+ascending node is the one at which the photocentre recedes from the observer,
+and omega is measured from it in the direction of motion. In `Binary+RV` the RVs
+fix which of the two branches that is; in `Binary` the astrometry alone cannot,
+so the pair is only defined up to the joint flip and should be quoted as such.
+Both are given on [0°, 360°).
 
 # Input data
 
@@ -179,6 +208,7 @@ Edit these near the top of `xo_Astrometry.py`:
 | --- | --- | --- |
 | `GuessOrbit` | `True` | Seed the orbit from the grid search rather than from broad uninformative priors. |
 | `LinRVTrend` | `False` | `True` fits a linear systemic RV trend; `False` fits linear + quadratic. |
+| `DeriveKfromA0` | `True` | Derive the RV semi-amplitude from a0, i, P and e, so one orbit fits the astrometry and RVs together. `False` samples K independently, for use as a consistency check. Only used in `Binary+RV`. |
 | `Nchains` | `3` | NUTS chains, and the number of cores requested. |
 
 Sampling uses `tune=3000`, `draws=1500` per chain and dominates the runtime.
@@ -207,6 +237,6 @@ and Radial Velocities of Gaia-4b" by Kanodia et al. (submitted to AAS journals),
 - [pandas v1.1.4](https://doi.org/10.5281/zenodo.4161697)
 - Astropy: [2013](https://doi.org/10.1051/0004-6361/201322068),
   [2018](https://doi.org/10.3847/1538-3881/aabc4f) and
-  [2022](https://doi.org/10.3847/1538-4357/ac7c74) — optional at runtime, used
-  only by the astropy VOTable reader in `xo_utils.py`, which falls back to a
-  dependency-free BINARY2 parser
+  [2022](https://doi.org/10.3847/1538-4357/ac7c74) — used for unit conversion
+  in `xo_Astrometry.py`, and by the astropy VOTable reader in `xo_utils.py`,
+  which falls back to a dependency-free BINARY2 parser
